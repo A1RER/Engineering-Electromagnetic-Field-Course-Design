@@ -1,0 +1,20 @@
+# C build artifacts
+*.o
+*.obj
+*.exe
+*.out
+dipole_field
+
+# MATLAB generated files
+*.asv
+*.m~
+slprj/
+*.slxc
+
+# Output data
+dipole_field_data.csv
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
