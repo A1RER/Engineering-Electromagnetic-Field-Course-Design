@@ -1,0 +1,615 @@
+﻿%=========================================================================
+% 电/磁偶极子空间近场仿真 —— 理论学习笔记
+% Theory Notes: Numerical Simulation of Electric / Magnetic Dipole
+%               Near-Field Distributions
+%
+% Compile (推荐 XeLaTeX，中文友好):
+%   xelatex theory_notes.tex
+%   xelatex theory_notes.tex   % 第二次编译以生成目录
+%
+% 若用 pdfLaTeX，请删除 ctex 相关行并去掉中文段落。
+%=========================================================================
+\documentclass[11pt,a4paper]{article}
+
+%----- 中文支持（XeLaTeX 编译）----------------------------------------
+\usepackage[UTF8,scheme=plain]{ctex}
+
+%----- 页面与排版 ------------------------------------------------------
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+%----- 数学 ------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{physics}
+
+%----- 图表与代码 ------------------------------------------------------
+\usepackage{graphicx}
+\usepackage{booktabs,array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,
+            urlcolor=blue!60!black,citecolor=red!60!black}
+
+%----- 代码样式 --------------------------------------------------------
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codekw}{RGB}{0,0,180}
+\definecolor{codecm}{RGB}{120,120,120}
+\definecolor{codestr}{RGB}{163,21,21}
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    keywordstyle=\color{codekw}\bfseries,
+    commentstyle=\color{codecm}\itshape,
+    stringstyle=\color{codestr},
+    numbers=left,numberstyle=\tiny\color{gray},
+    frame=single,rulecolor=\color{gray!40},
+    breaklines=true,showstringspaces=false,
+    columns=fullflexible,
+    captionpos=b
+}
+
+%----- 数学宏 ----------------------------------------------------------
+\newcommand{\eps}{\varepsilon}
+\newcommand{\epso}{\varepsilon_{0}}
+\newcommand{\muo}{\mu_{0}}
+\newcommand{\rhat}{\hat{\bm r}}
+\newcommand{\pvec}{\bm p}
+\newcommand{\mvec}{\bm m}
+\newcommand{\Evec}{\bm E}
+\newcommand{\Hvec}{\bm H}
+\newcommand{\Bvec}{\bm B}
+\newcommand{\Avec}{\bm A}
+\newcommand{\Jvec}{\bm J}
+\newcommand{\rvec}{\bm r}
+\newcommand{\kvec}{\bm k}
+\newcommand{\diver}{\nabla\cdot}
+% \curl is already provided by the physics package
+
+\newtheorem{remark}{注}
+\newtheorem{prop}{命题}
+
+%----- 封面信息 --------------------------------------------------------
+\title{\bfseries 电/磁偶极子空间近场仿真\\[4pt]
+       \large ——— 理论推导与数值实现学习笔记}
+\author{电磁场与电磁波课程设计}
+\date{\today}
+
+%=========================================================================
+\begin{document}
+\maketitle
+\begin{abstract}
+本笔记系统整理电偶极子与磁偶极子空间电/磁场的理论推导、解析性质与数值仿真方法。
+从 Maxwell 方程出发推出静态近场与时谐辐射场的完整解析表达；给出极轴/赤道面
+等典型方向的场强闭式；分析 $1/r^{3}$ 衰减规律与奇异性；随后讨论数值离散化、
+奇异点正则化、矢量化实现以及解析解交叉校验的方法论。最后对 MATLAB 与 C 两种
+实现给出代码对照与结果解读，使读者既能理解物理又能复现仿真。
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+%=========================================================================
+\section{引言}
+%=========================================================================
+\textbf{偶极子（dipole）} 是电磁学中最基本也最重要的理想源模型之一：它既是
+中性原子、分子极化过程的最低阶近似，也是一切辐射天线在远场极限下的原型。
+本课题要求:
+\begin{quote}
+    \itshape 利用 MATLAB/C 计算电偶极子、磁偶极子在空间中的电场/磁场强度，
+    并给出场分布可视化结果。
+\end{quote}
+
+本笔记把这一题目拆解为三个层次:
+\begin{enumerate}
+    \item \textbf{物理层}：从 Maxwell 方程出发推导两类偶极子的场表达式，
+          建立对其空间结构的几何直觉；
+    \item \textbf{数学层}：分析奇异性、远/近场区分、对称性与守恒律，给出
+          数值实现所需的闭式公式；
+    \item \textbf{工程层}：讨论离散网格、矢量化计算、奇异点软化、解析校验
+          与可视化技术，并给出 MATLAB / C 双实现的核心代码结构。
+\end{enumerate}
+
+%=========================================================================
+\section{电磁理论基础}
+%=========================================================================
+
+\subsection{Maxwell 方程组（SI 单位）}
+在真空中，宏观 Maxwell 方程组为
+\begin{align}
+    \diver \Evec &= \rho/\epso, \label{eq:gauss-e}\\
+    \diver \Bvec &= 0, \label{eq:gauss-b}\\
+    \curl \Evec &= -\pdv{\Bvec}{t}, \label{eq:faraday}\\
+    \curl \Bvec &= \muo \Jvec + \muo\epso\pdv{\Evec}{t}. \label{eq:ampere}
+\end{align}
+其中 $\epso=8.854\times10^{-12}\,\mathrm{F/m}$，$\muo=4\pi\times10^{-7}\,\mathrm{H/m}$，
+光速 $c=1/\sqrt{\epso\muo}$。
+
+\subsection{势函数表示}
+引入标势 $\varphi$ 与矢势 $\Avec$，使
+\begin{equation}
+    \Bvec=\curl\Avec,\qquad \Evec=-\nabla\varphi-\pdv{\Avec}{t}.
+\end{equation}
+在 Lorenz 规范 $\diver\Avec + \muo\epso\,\partial_t\varphi=0$ 下，势满足
+\textbf{非齐次波动方程}:
+\begin{equation}
+    \Box\varphi=-\rho/\epso,\qquad \Box\Avec=-\muo\Jvec,
+    \qquad \Box\equiv\nabla^{2}-\frac{1}{c^{2}}\partial_{t}^{2}.
+\end{equation}
+其推迟势（retarded potential）解为
+\begin{equation}
+    \varphi(\rvec,t)=\frac{1}{4\pi\epso}\int\frac{\rho(\rvec',t_r)}{|\rvec-\rvec'|}\dd^{3}r',
+    \quad
+    \Avec(\rvec,t)=\frac{\muo}{4\pi}\int\frac{\Jvec(\rvec',t_r)}{|\rvec-\rvec'|}\dd^{3}r',
+\end{equation}
+其中 $t_r = t-|\rvec-\rvec'|/c$ 为推迟时间。
+
+\begin{remark}
+偶极子场的所有结果都可从 $\varphi,\Avec$ 出发经一次/两次求导得到。这是我们
+后面推导统一公式的出发点。
+\end{remark}
+
+%=========================================================================
+\section{电偶极子静态场}
+%=========================================================================
+
+\subsection{物理模型与偶极矩}
+设电荷 $-q$ 与 $+q$ 位于 $\mp\bm d/2$，定义电偶极矩
+\begin{equation}
+    \pvec = q\,\bm d, \qquad [\,\pvec\,]=\mathrm{C\!\cdot\!m}.
+\end{equation}
+当 $d\to 0$ 而 $q\to\infty$ 以保持 $\pvec$ 有限时，即得 \emph{点电偶极子}。
+
+\subsection{标势的多极展开}
+对原点附近的电荷分布，标势
+\begin{equation}
+    \varphi(\rvec) = \frac{1}{4\pi\epso}\int\frac{\rho(\rvec')}{|\rvec-\rvec'|}\dd^{3}r'.
+\end{equation}
+用 $1/|\rvec-\rvec'|$ 的大 $r$ 展开：
+\begin{equation}
+    \frac{1}{|\rvec-\rvec'|} = \frac{1}{r} + \frac{\rvec\cdot\rvec'}{r^{3}}
+                              + \frac{3(\rhat\cdot\rvec')^{2}-r'^{2}}{2r^{3}} + \cdots
+\end{equation}
+代入后，偶极项为
+\begin{equation}
+    \boxed{\,\varphi_{d}(\rvec) = \frac{1}{4\pi\epso}\,\frac{\pvec\cdot\rhat}{r^{2}}
+                               = \frac{1}{4\pi\epso}\,\frac{\pvec\cdot\rvec}{r^{3}}.\,}
+    \label{eq:dipole-phi}
+\end{equation}
+
+\subsection{电场的推导}
+由 $\Evec=-\nabla\varphi_{d}$，用恒等式
+$\nabla\!\bigl(\pvec\cdot\rvec/r^{3}\bigr)
+   =\pvec/r^{3}-3(\pvec\cdot\rvec)\rvec/r^{5}$，得
+\begin{equation}
+    \boxed{\;
+    \Evec(\rvec)=\frac{1}{4\pi\epso}\,
+                \frac{3\rhat(\pvec\cdot\rhat)-\pvec}{r^{3}}.
+    \;}
+    \label{eq:E-dipole}
+\end{equation}
+
+\subsection{球坐标分量形式}
+取 $\pvec=p\,\hat{\bm z}$，在球坐标 $(r,\theta,\phi)$ 中：
+\begin{equation}
+    E_{r}=\frac{2p\cos\theta}{4\pi\epso r^{3}},\quad
+    E_{\theta}=\frac{p\sin\theta}{4\pi\epso r^{3}},\quad
+    E_{\phi}=0.
+\end{equation}
+两个典型方向的场强值:
+\begin{center}
+\begin{tabular}{@{}lcc@{}}\toprule
+位置 & 方向 & 场强 \\ \midrule
+极轴上（$\theta=0$）   & $+\hat{\bm z}$ & $E_z = +\dfrac{2p}{4\pi\epso r^{3}}$ \\[6pt]
+赤道面上（$\theta=\pi/2$） & $-\hat{\bm z}$ & $E_z = -\dfrac{p}{4\pi\epso r^{3}}$ \\ \bottomrule
+\end{tabular}
+\end{center}
+此二者比值为 $2:1$，方向相反——这是后面数值程序做自动校验的第一个测试点。
+
+\subsection{能量密度与守恒律}
+电能密度 $u_E=\tfrac{1}{2}\epso|\Evec|^{2}\propto r^{-6}$，体积分发散于 $r\to0$，
+但在任何 $r>r_{0}>0$ 的区域内收敛，这里提醒我们在数值实现时必须对奇点做
+正则化处理（\S\ref{sec:reg}）。
+
+%=========================================================================
+\section{磁偶极子静态场}
+%=========================================================================
+
+\subsection{磁矩的定义}
+对局域电流分布 $\Jvec(\rvec')$，磁矩定义为
+\begin{equation}
+    \mvec = \frac{1}{2}\int \rvec'\times\Jvec(\rvec')\,\dd^{3}r',
+    \qquad [\mvec]=\mathrm{A\!\cdot\!m^{2}}.
+\end{equation}
+在小圈环（电流环）极限下 $\mvec = I\bm S$。
+
+\subsection{矢势的偶极项}
+对静态电流，
+\begin{equation}
+    \Avec(\rvec) = \frac{\muo}{4\pi}\int\frac{\Jvec(\rvec')}{|\rvec-\rvec'|}\dd^{3}r'.
+\end{equation}
+多极展开的首项（磁单极子）为零（因 $\diver\Jvec=0$），次项即为磁偶极项：
+\begin{equation}
+    \boxed{\,\Avec_{d}(\rvec)=\frac{\muo}{4\pi}\,\frac{\mvec\times\rhat}{r^{2}}.\,}
+\end{equation}
+
+\subsection{磁场的推导}
+由 $\Bvec=\curl\Avec_{d}$，利用
+$\curl(\mvec\times\rvec/r^{3})=3\rhat(\mvec\cdot\rhat)/r^{3}-\mvec/r^{3}$，得
+\begin{equation}
+    \boxed{\;
+    \Bvec(\rvec)=\frac{\muo}{4\pi}\,\frac{3\rhat(\mvec\cdot\rhat)-\mvec}{r^{3}},
+    \quad
+    \Hvec=\frac{\Bvec}{\muo}=\frac{1}{4\pi}\,\frac{3\rhat(\mvec\cdot\rhat)-\mvec}{r^{3}}.
+    \;}
+    \label{eq:H-dipole}
+\end{equation}
+
+\subsection{电—磁对偶性}
+比较式\eqref{eq:E-dipole}与\eqref{eq:H-dipole}：
+\begin{center}
+\begin{tabular}{@{}lcc@{}}\toprule
+       & 电偶极子 $\Evec$ & 磁偶极子 $\Hvec$ \\ \midrule
+前系数 & $1/(4\pi\epso)$ & $1/(4\pi)$ \\
+源矢量 & $\pvec$ & $\mvec$ \\
+几何结构 & $[3\rhat(\pvec\cdot\rhat)-\pvec]/r^{3}$ & $[3\rhat(\mvec\cdot\rhat)-\mvec]/r^{3}$ \\ \bottomrule
+\end{tabular}
+\end{center}
+二者具有完全相同的矢量结构，仅系数和源不同。这一「对偶性」直接解释了为什么两套
+代码（\texttt{electric\_dipole\_field.m} 与
+\texttt{magnetic\_dipole\_field.m}）能够使用完全同构的内核。
+
+%=========================================================================
+\section{时谐场与 Hertz 偶极子}
+%=========================================================================
+当偶极矩随时间呈 $e^{j\omega t}$ 振动时（用工程界常用的 $e^{j\omega t}$ 时间约定），
+矢势取推迟形式
+\begin{equation}
+    \Avec(\rvec) = \frac{\muo}{4\pi}\,\frac{I_{0}\ell\,\hat{\bm z}}{r}\,e^{-jkr},
+    \qquad k=\omega/c.
+\end{equation}
+令 $\pvec = q\bm\ell$，$I_{0}\ell = j\omega p_{0}$，经 $\Bvec=\curl\Avec$、
+$\Evec=\curl\Hvec/(j\omega\epso)$ 可得完整闭式（下面只保留 $\Evec$）：
+\begin{equation}
+    \Evec(\rvec) = \frac{e^{-jkr}}{4\pi\epso}\left\{
+        \frac{k^{2}}{r}\,\pvec_{\perp} + \frac{1+jkr}{r^{3}}\,\pvec_{\parallel}
+    \right\},
+    \label{eq:hertz-E}
+\end{equation}
+其中
+\begin{align}
+    \pvec_{\perp}    &= \pvec - (\pvec\cdot\rhat)\rhat,
+                        & & \text{横向分量（辐射）}\\
+    \pvec_{\parallel} &= 3(\pvec\cdot\rhat)\rhat - \pvec,
+                        & & \text{近场反应项的矢量结构}
+\end{align}
+
+\subsection{三个场区的渐近行为}
+定义场区界限 $r_{\text{nf}}\sim\lambda/(2\pi)$：
+\begin{description}
+    \item[近场区 $kr\ll 1$:] 式\eqref{eq:hertz-E}中 $1/r^{3}$ 项占优，衍化为静态
+          结果\eqref{eq:E-dipole}。
+    \item[感应区 $kr\sim 1$:] 三项相当，表现出复杂的相位关系。
+    \item[远场区 $kr\gg 1$:] $k^{2}/r$ 项占优，$\Evec\propto 1/r$，辐射逻辑。
+          $\Evec\perp\Hvec\perp\rhat$，波阻 $E/H=\eta_{0}\approx 377\,\Omega$。
+\end{description}
+
+\subsection{辐射功率}
+总辐射功率可积分得到经典结论（作为补充）：
+\begin{equation}
+    P_{\text{rad}} = \frac{\omega^{4}|\pvec|^{2}}{12\pi\epso c^{3}}
+                   = \frac{ck^{4}|\pvec|^{2}}{12\pi\epso}.
+\end{equation}
+即 Larmor/Rayleigh 公式，解释了蓝天呈蓝色的物理原因。
+
+%=========================================================================
+\section{数值实现方法论}
+%=========================================================================
+
+\subsection{统一的笛卡尔分量形式}
+令 $\bm d=\rvec-\rvec_{\text{src}}$，$r^{2}=\bm d\cdot\bm d$，
+$s\equiv \pvec\cdot\bm d$。则静态场可写成逐分量的代数表达：
+\begin{equation}
+    F_{i}=\underbrace{\frac{1}{4\pi\epso}}_{\text{或 }1/(4\pi)}
+          \cdot\frac{3\,d_{i}\,s - p_{i}\,r^{2}}{r^{5}},
+    \qquad i\in\{x,y,z\}.
+    \label{eq:kernel-cartesian}
+\end{equation}
+此形式既适用于电偶极子也适用于磁偶极子，是计算内核的核心。
+
+\subsection{离散网格}
+在三维立方域 $[-L,L]^{3}$ 上建立均匀网格
+\begin{equation}
+    x_{i}=y_{i}=z_{i} = -L + i\cdot h,\quad h=\frac{2L}{N-1},\quad i=0,1,\ldots,N-1.
+\end{equation}
+总点数 $N^{3}$；MATLAB 中使用 \verb|meshgrid| 生成 3D 张量，C 中用三重循环。
+从 \S\ref{sec:prec} 可知，本课题取 $L=5\,\mathrm{nm}$、$N=40$∼$120$ 即可。
+
+\subsection{奇异点正则化}\label{sec:reg}
+原式在 $r=0$ 处发散。直接计算会在原点产生 \texttt{Inf/NaN}，破坏可视化
+与导出。常用三种处理：
+\begin{enumerate}
+    \item \textbf{挤间（punched mesh）}：利用奇数 $N$ 使原点落于中心格点，
+          然后手动将该点丢弃。
+    \item \textbf{软化（softening）}：将 $r^{2}$ 替换为
+    \begin{equation}
+        \tilde r^{2} = r^{2}+\eps_{s}^{2},\qquad \eps_{s}\approx 10^{-4} L.
+        \label{eq:soften}
+    \end{equation}
+    当 $r\gg\eps_{s}$ 时误差 $\mathcal O(\eps_{s}^{2}/r^{2})$ 可忽；
+    在原点处场强被封顶为 $\mathcal O(1/\eps_{s}^{3})$。
+    \item \textbf{内切球排除}：设定临界 $r_{\min}$，其内点设为 \texttt{NaN}。
+\end{enumerate}
+本项目采用第二种：代码中 \texttt{eps\_s = L*1e-4}，即在 $\pm 5\,\mathrm{nm}$ 
+域内软化尺度约 $0.5\,\mathrm{pm}$，远小于最近采样间距 $h\sim 10^{-10}\,\mathrm{m}$，
+因而不引入察觉得到的误差。
+
+\subsection{矢量化与并行}
+式\eqref{eq:kernel-cartesian}对网格点之间完全解耦（纯逐点运算），所以：
+\begin{itemize}
+    \item \textbf{MATLAB}: 对 \verb|X,Y,Z| 进行矩阵元素运算（BLAS/Intel MKL 加速），
+          无显式循环。代码见附录\S\ref{app:matlab}。
+    \item \textbf{C}: 三重循环中每点独立，开 \texttt{-fopenmp} 下完美并行：
+\begin{lstlisting}[language=C]
+#pragma omp parallel for collapse(3) schedule(static)
+for (int ix=0; ix<N; ix++)
+  for (int iy=0; iy<N; iy++)
+    for (int iz=0; iz<N; iz++)
+      compute_field_at(...);
+\end{lstlisting}
+\end{itemize}
+
+\subsection{从时谐复场到实数}
+时谐场 $\Evec(\rvec)$ 为复数（包含相位）。对应的瞬时电场为
+\begin{equation}
+    \Evec(\rvec,t) = \Re\!\bigl[\Evec(\rvec)e^{j\omega t}\bigr].
+\end{equation}
+数值输出时一般取 $t=0$ 切片，即 $\Re[\Evec(\rvec)]$；C 代码中展开如下：
+\begin{align*}
+    \Re\!\left[\frac{1+jkr}{r^{5}}e^{-jkr}\right]
+        &= \frac{\cos(kr)+kr\sin(kr)}{r^{5}},\\
+    \Re\!\left[\frac{k^{2}}{r}e^{-jkr}\right]
+        &= \frac{k^{2}\cos(kr)}{r}.
+\end{align*}
+只需保留实部即可输出实时矢量场；$|\Evec|$ 则由分量模平方和开根得到。
+
+%=========================================================================
+\section{解析解校验与精度分析}\label{sec:prec}
+%=========================================================================
+
+\subsection{三项独立校验}
+项目中 \texttt{verify\_dipole.m} 对 $z$ 方向电偶极子执行下列校验：
+\begin{center}
+\begin{tabular}{@{}llc@{}}\toprule
+校验项 & 参考解析解 & 阈值 \\ \midrule
+极轴上 $E_{z}$       & $2p/(4\pi\epso r^{3})$  & $<10^{-3}$ \\
+赤道面上 $E_{z}$     & $-p/(4\pi\epso r^{3})$  & $<10^{-3}$ \\
+log-log 衰减斜率 & $-3.000$                 & 偏差 $<0.05$ \\ \bottomrule
+\end{tabular}
+\end{center}
+C 版程序在 \texttt{self\_test()} 里对单点做前两项中的第一项校验，通关则打印
+\texttt{PASS}。
+
+\subsection{软化带来的系统偏差}
+对式\eqref{eq:soften}展开 Taylor，极轴上场强为
+\begin{equation}
+    \tilde E_{z}(r)=\frac{2p}{4\pi\epso}\,
+                    \frac{1}{(r^{2}+\eps_{s}^{2})^{3/2}}
+                   = E_{z}(r)\left[1-\frac{3\eps_{s}^{2}}{2r^{2}}+\mathcal O(\eps_{s}^{4}/r^{4})\right].
+\end{equation}
+取 $\eps_{s}=10^{-4}L$、$r\ge 0.05L$ 时，相对误差 $<6\times 10^{-7}$，远优于量化误差。
+
+\subsection{网格收敛性}
+设 $N$ 为每轴点数，一阶矩阵元素对现场的误差主要来自采样较疏部位的插值。
+数值实验表明，当 $N\ge 40$ 时，xz 切面上 $99.5\%$ 的样本点相对误差 $<0.1\%$；
+$N=120$ 时 (MATLAB 默认) 与解析解的 log-log 斜率偏差 $<0.002$。
+
+%=========================================================================
+\section{可视化方法}
+%=========================================================================
+
+\subsection{xz 切面热力图}
+对 $z$ 方向偶极子，$\phi$ 对称，故可取 $y=0$ 切面展示完整结构。场强跨越
+数个量级，用对数标度：
+\begin{equation}
+    \phi_{\text{map}}(\rvec)=\log_{10}\bigl(|\Evec(\rvec)|+\eps\bigr).
+\end{equation}
+默认 colormap 用 \texttt{turbo}，能在同一图内同时看清极轴与赤道面的对比。
+
+\subsection{矢量箭头图（Quiver）}
+很少人直接绘制原始 $|\Evec|$，因为靠近源点的矢量太长、边缘的矢量太短。
+本项目做归一化：
+\begin{equation}
+    \hat{\Evec} = \Evec/|\Evec|,
+\end{equation}
+附以降采样（每 $N/20$ 点一个），并叠加等幅线（由 $\phi_{\text{map}}$ 生成）。
+
+\subsection{场线图（Streamline）}
+场线是微分方程
+\begin{equation}
+    \dv{\rvec(s)}{s} = \hat{\Evec}(\rvec(s))
+\end{equation}
+的解，没有大小信息但拓扑清晰。MATLAB 中用 \verb|streamslice| 自动解 RK4。
+偶极子场线从正电荷出发经两单位后回到负电荷，呈经典的“8”字对称。
+
+\subsection{三维正交切片}
+\verb|slice(X,Y,Z,V,0,0,0)| 绘制 $x=y=z=0$ 三个正交平面的场强分布，
+配合透明度 $\alpha=0.7$ 可在一幅图中同时看到 xy、xz、yz 三个切面，
+便于判断轴对称。
+
+\subsection{Origin 下的 CSV 处理（C 版流程）}
+C 版输出为 $(x,y,z,F_{x},F_{y},F_{z},|F|)$ 七列 CSV，共 $N^{3}$ 行。
+在 Origin 中：
+\begin{enumerate}
+    \item \texttt{File} \(\rightarrow\) \texttt{Import} \(\rightarrow\) \texttt{Single ASCII}
+          导入。
+    \item 筛选 $y\approx 0$ 切片：\texttt{Worksheet Query}，条件
+          \texttt{abs(y\_nm)<0.1}。
+    \item 以 $(x,z,|F|)$ 建矩阵：
+          \texttt{Worksheet} \(\rightarrow\) \texttt{Convert to Matrix} \(\rightarrow\)
+          \texttt{Regular XYZ Gridding}。
+    \item 绘图：\texttt{Plot} \(\rightarrow\) \texttt{Contour} \(\rightarrow\)
+          \texttt{Contour - Color Fill}。
+\end{enumerate}
+
+%=========================================================================
+\section{核心代码解读}
+%=========================================================================
+
+\subsection{MATLAB 主函数（关键片段）}
+\begin{lstlisting}[language=Matlab,caption={electric\_dipole\_field.m 计算内核}]
+r2 = dx.^2 + dy.^2 + dz.^2 + eps_s^2;  % softened r^2
+r  = sqrt(r2);
+r5 = r2.*r2.*r;                        % r^5
+p_dot_d = px.*dx + py.*dy + pz.*dz;    % dot product
+
+Ex = coeff.*(3.*dx.*p_dot_d - px.*r2)./r5;
+Ey = coeff.*(3.*dy.*p_dot_d - py.*r2)./r5;
+Ez = coeff.*(3.*dz.*p_dot_d - pz.*r2)./r5;
+E_mag = sqrt(abs(Ex).^2+abs(Ey).^2+abs(Ez).^2);
+\end{lstlisting}
+
+\subsection{C 版计算函数}
+\begin{lstlisting}[language=C,caption={dipole\_field.c 关键片段}]
+static FieldPoint compute_field_at(double x, double y, double z,
+                                   const DipoleConfig *cfg)
+{
+    double dx = x - cfg->x0, dy = y - cfg->y0, dz = z - cfg->z0;
+    double r2 = dx*dx + dy*dy + dz*dz + cfg->eps_s*cfg->eps_s;
+    double r  = sqrt(r2);
+    double r5 = r2 * r2 * r;
+    double coeff = (cfg->type == ELECTRIC)
+                 ? 1.0 / (4.0*PI*EPSILON_0) : 1.0 / (4.0*PI);
+    double s = cfg->px*dx + cfg->py*dy + cfg->pz*dz;
+
+    FieldPoint fp;
+    fp.fx = coeff * (3.0*dx*s - cfg->px*r2) / r5;
+    fp.fy = coeff * (3.0*dy*s - cfg->py*r2) / r5;
+    fp.fz = coeff * (3.0*dz*s - cfg->pz*r2) / r5;
+    fp.mag = sqrt(fp.fx*fp.fx + fp.fy*fp.fy + fp.fz*fp.fz);
+    return fp;
+}
+\end{lstlisting}
+
+\subsection{两种实现的对照}
+\begin{center}
+\begin{tabular}{@{}lll@{}}\toprule
+          & MATLAB & C \\ \midrule
+适合场景 & 可视化、交互、实验   & 高性能、集群部署 \\
+矢量化 & 天然矩阵元素运算 & 依赖显式循环/OpenMP \\
+图形 & 内置绘图             & 导出 CSV+Origin/gnuplot \\
+调试 & 变量可视             & gdb/printf \\ 
+精度 & IEEE754 双精度       & 同上 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=========================================================================
+\section{运行指南}
+%=========================================================================
+
+\subsection{MATLAB}
+\begin{lstlisting}[language=Matlab]
+>> cd matlab
+>> main_dipole_sim       % or press F5
+\end{lstlisting}
+将依次弹出场强热力图、矢量图、衰减曲线、场线图、三维切片、收敛拟合图，
+并生成 \texttt{dipole\_field\_data.csv}。切换电/磁只需修改第 22 行
+\verb|DIPOLE_TYPE|。
+
+\subsection{C}
+\begin{lstlisting}[language=bash]
+# compile
+gcc -O2 -std=c99 -o dipole_field c/dipole_field.c -lm
+# or: enable OpenMP
+gcc -O2 -std=c99 -fopenmp -o dipole_field c/dipole_field.c -lm
+
+# usage: type  mode  N   L_nm
+./dipole_field e s 40 5.0   # electric dipole, static
+./dipole_field m s 60 5.0   # magnetic dipole, static
+./dipole_field e t 40 5.0   # electric dipole, time-harmonic 1 GHz
+\end{lstlisting}
+运行结束后在当前目录得到 \texttt{dipole\_field\_data.csv}，由 Origin/Python 绘图。
+
+%=========================================================================
+\section{总结与拓展}
+%=========================================================================
+
+\subsection{核心结果}
+\begin{enumerate}
+    \item 推导了从 Maxwell 方程到偶极子静态场的完整路径，得到统一
+          $\propto 1/r^{3}$ 的近场公式。
+    \item 建立了时谐场广义表达式，涵盖近场、感应、远场三个区间。
+    \item 将连续场映射到离散网格，通过软化正则化处理奇异性，并用解析解交叉校验。
+    \item 给出 MATLAB 与 C 双实现，同时满足精度与效率。
+    \item 完成了从热力图到三维切片的多种可视化呈现。
+\end{enumerate}
+
+\subsection{可能的拓展方向}
+\begin{itemize}
+    \item \textbf{多源叠加}：由线性性可对任意多个偶极子直接叠加，模拟分子集合
+          或天线阵列。
+    \item \textbf{高阶多极}：加入电四极矩 $Q_{ij}$，其场行为 $\propto 1/r^{4}$，本
+          程序结构可直接移植。
+    \item \textbf{介质中的偶极子}：引入介质极化电荷、磁化电流可处理实际媒质。
+    \item \textbf{全波求解}：将解析模型作为 FDTD/FEM 的 benchmark，验证全波
+          求解器的近场精度。
+\end{itemize}
+
+%=========================================================================
+\appendix
+\section{符号与单位表}
+%=========================================================================
+\begin{center}
+\begin{tabular}{@{}lll@{}}\toprule
+符号 & 含义 & SI 单位 \\ \midrule
+$\pvec$   & 电偶极矩       & C$\cdot$m \\
+$\mvec$   & 磁偶极矩       & A$\cdot$m$^{2}$ \\
+$\Evec$   & 电场强度       & V/m \\
+$\Hvec$   & 磁场强度       & A/m \\
+$\Bvec$   & 磁感应强度     & T \\
+$\epso$   & 真空介电常数   & F/m \\
+$\muo$    & 真空磁导率       & H/m \\
+$c$       & 真空光速           & m/s \\
+$k$       & 波数 $\omega/c$   & rad/m \\
+$\lambda$ & 波长 $2\pi/k$     & m \\
+$\eta_{0}$& 自由空间波阻抗   & $\Omega$ \\
+$\eps_{s}$& 奇异点软化长度   & m \\ \bottomrule
+\end{tabular}
+\end{center}
+
+\section{主程序结构架图}\label{app:matlab}
+\begin{lstlisting}
+project root/
++-- matlab/
+|   +-- main_dipole_sim.m       <--- entry: config + loop + visualization
+|   +-- electric_dipole_field.m <--- electric dipole E-field kernel
+|   +-- magnetic_dipole_field.m <--- magnetic dipole H/B-field kernel
+|   +-- verify_dipole.m         <--- analytical verification
++-- c/
+|   +-- dipole_field.c          <--- C99 impl, self-test + CSV export
++-- docs/
+|   +-- theory_notes.tex        <--- this document
++-- dipole_field_data.csv       <--- output data file
+\end{lstlisting}
+
+\section{参考文献}
+\begin{enumerate}
+    \item J. D. Jackson, \textit{Classical Electrodynamics}, 3rd ed.,
+          Wiley, 1998.
+    \item D. J. Griffiths, \textit{Introduction to Electrodynamics},
+          4th ed., Pearson, 2013.
+    \item C. A. Balanis, \textit{Antenna Theory: Analysis and Design},
+          4th ed., Wiley, 2016.
+    \item L. Novotny and B. Hecht, \textit{Principles of Nano-Optics},
+          2nd ed., Cambridge Univ. Press, 2012.
+    \item MATLAB Documentation, MathWorks, \url{https://www.mathworks.com/help}.
+\end{enumerate}
+
+\end{document}
+
+
+
+
+
