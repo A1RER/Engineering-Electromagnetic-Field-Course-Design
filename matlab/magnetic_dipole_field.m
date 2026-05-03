@@ -41,6 +41,7 @@ dz = Z - r_src(3);
 
 r2 = dx.^2 + dy.^2 + dz.^2 + eps_s^2;
 r  = sqrt(r2);
+r3 = r2 .* r;
 r5 = r2 .* r2 .* r;
 
 m_dot_d = mx.*dx + my.*dy + mz.*dz;
@@ -55,8 +56,9 @@ switch lower(mode)
 
     case 'timeharmonic'
         phase = exp(-1j .* k .* r);
-        A = (1 + 1j.*k.*r) ./ r5;
-        B = k^2 ./ (r2 .* r);
+        % e^{jωt} convention; reduces to static at k→0
+        A = (1 + 1j.*k.*r) ./ r3;            % reactive/near-field:  (1+jkr)/r³
+        B = k^2 ./ r;                        % radiative/far-field:  k²/r
 
         mt_x = mx - m_dot_d.*dx./r2;
         mt_y = my - m_dot_d.*dy./r2;
