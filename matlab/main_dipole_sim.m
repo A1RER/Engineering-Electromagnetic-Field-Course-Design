@@ -228,4 +228,21 @@ out_mat = [X2(:)*1e9, Y2(:)*1e9, Z2(:)*1e9, ...
 writematrix(out_mat, out_file, 'WriteMode', 'append');
 
 fprintf('[导出] 数据已保存至: %s\n', out_file);
+
+% =========================================================================
+%  图片导出
+% =========================================================================
+out_dir = fullfile(fileparts(mfilename('fullpath')), '..', 'output');
+if ~isfolder(out_dir), mkdir(out_dir); end
+
+tag = sprintf('%s_%s', lower(DIPOLE_TYPE(1:3)), lower(SIM_MODE(1:3)));
+exportgraphics(fig1, fullfile(out_dir, [tag '_distribution.png']), 'Resolution', 150);
+exportgraphics(fig2, fullfile(out_dir, [tag '_streamline.png']),   'Resolution', 150);
+if exist('fig3', 'var')
+    exportgraphics(fig3, fullfile(out_dir, [tag '_3d_slice.png']), 'Resolution', 150);
+end
+if exist('fig4', 'var')
+    exportgraphics(fig4, fullfile(out_dir, [tag '_convergence.png']), 'Resolution', 150);
+end
+fprintf('[导出] 图片已保存至: %s\n', out_dir);
 fprintf('[完成] 仿真结束 ─ 共 %d 个观测点\n', numel(F_mag));
