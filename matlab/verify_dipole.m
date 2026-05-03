@@ -47,11 +47,11 @@ err_polar = max(abs(Ez_num - Ez_ana) ./ abs(Ez_ana));
 Xe = r_s;  Ye = zeros(N,1);  Ze = zeros(N,1);
 [Ex_num, Ey_num, Ez_num_eq, ~] = electric_dipole_field(Xe, Ye, Ze, p_vec, r_src, eps_s, epsilon_0);
 Ez_ana_eq = -coeff ./ r_s.^3;
-Ex_ana_eq = zeros(N,1);
 
 err_equator_Ez = max(abs(Ez_num_eq - Ez_ana_eq) ./ abs(Ez_ana_eq));
 err_equator_Ex = max(abs(Ex_num));        % should be zero
-err_equator    = max(err_equator_Ez, err_equator_Ex);
+err_equator_Ey = max(abs(Ey_num));        % should be zero
+err_equator    = max([err_equator_Ez, err_equator_Ex, err_equator_Ey]);
 
 %% --- Check 3: log-log slope via linear regression ---
 % Sample E_mag along polar axis
