@@ -59,6 +59,9 @@ $$r^2 \;\longrightarrow\; r^2 + \varepsilon_s^2, \quad \varepsilon_s \approx 10^
 │   └── verify_dipole.m            # 解析交叉校验与收敛性分析函数
 ├── c/
 │   └── dipole_field.c             # C99 实现：三维网格场强计算与 CSV 导出
+├── docs/
+│   ├── theory_notes.tex           # 理论推导与公式注释（LaTeX 源）
+│   └── theory_notes.pdf           # 编译后的理论文档
 ├── LICENSE                        # MIT License
 └── README.md
 ```
@@ -102,11 +105,7 @@ SIM_MODE    = 'static';     % 'static'   | 'timeharmonic'
 **编译：**
 
 ```bash
-# 标准编译
 gcc -O2 -std=c99 -o dipole_field c/dipole_field.c -lm
-
-# 启用 OpenMP 并行加速（可选）
-gcc -O2 -std=c99 -fopenmp -o dipole_field c/dipole_field.c -lm
 ```
 
 **运行：**
@@ -141,7 +140,6 @@ gcc -O2 -std=c99 -fopenmp -o dipole_field c/dipole_field.c -lm
 | 静态近场模式 | ✅ | ✅ |
 | 时谐场模式 | ✅ | ✅ |
 | 全矢量化计算（无循环） | ✅ | — |
-| OpenMP 并行加速 | — | ✅（可选） |
 | 奇异点正则化 | ✅ | ✅ |
 | 解析校验（极轴 / 赤道 / 斜率拟合） | ✅ | ✅（自检）|
 | 2D 热力图 / 矢量图 / 流线图 | ✅ | — |
@@ -210,7 +208,6 @@ C 版本在 `main()` 入口处执行内联自检，于极轴 $r = L/2$ 处对比
 ### C
 - GCC 5.0+ 或 MinGW（Windows）
 - C 标准库：`math.h`、`stdio.h`、`stdlib.h`
-- OpenMP（可选，用于并行加速）
 
 ---
 
