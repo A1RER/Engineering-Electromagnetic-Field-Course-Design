@@ -10,9 +10,6 @@
  * Compile (GCC / MinGW):
  *   gcc -O2 -std=c99 -o dipole_field dipole_field.c -lm
  *
- * Compile with OpenMP (optional parallelisation):
- *   gcc -O2 -std=c99 -fopenmp -o dipole_field dipole_field.c -lm
- *
  * Usage:
  *   dipole_field [type] [mode] [N] [L_nm]
  *
@@ -116,12 +113,13 @@ static FieldPoint compute_field_at(double x, double y, double z,
         double sin_kr = sin(kr);     /* Im[e^{-jkr}] = -sin(kr) */
 
         /*
-         * A = (1+jkr)/r⁵   →   Re[A·e^{-jkr}] = (cos_kr + kr·sin_kr)/r⁵
-         * B = k²/r³         →   Re[B·e^{-jkr}] = k²·cos_kr/r³
+         * e^{jωt} convention; reduces to static at k→0.
+         * A = (1+jkr)/r³   →   Re[A·e^{-jkr}] = (cos_kr + kr·sin_kr)/r³
+         * B = k²/r          →   Re[B·e^{-jkr}] = k²·cos_kr/r
          */
         double r3   = r2 * r;
-        double A_re = (cos_kr + kr*sin_kr) / r5;
-        double B_re = (k*k * cos_kr) / r3;
+        double A_re = (cos_kr + kr*sin_kr) / r3;
+        double B_re = (k*k * cos_kr) / r;
 
         /* Transverse component: pt_i = p_i - (p·d/r²)·d_i */
         double ptx = px - p_dot_d*dx/r2;
