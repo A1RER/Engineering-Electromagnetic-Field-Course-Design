@@ -42,7 +42,8 @@ dz = Z - r_src(3);
 
 r2 = dx.^2 + dy.^2 + dz.^2 + eps_s^2;   % regularised |r|²
 r  = sqrt(r2);                             % regularised |r|
-r5 = r2 .* r2 .* r;                       % r^5  (reused below)
+r3 = r2 .* r;                             % r^3
+r5 = r2 .* r2 .* r;                       % r^5
 
 % p · d  (unnormalised inner product; r factors handled by denominator)
 p_dot_d = px.*dx + py.*dy + pz.*dz;
@@ -61,9 +62,9 @@ switch lower(mode)
     case 'timeharmonic'
         phase = exp(-1j .* k .* r);          % retardation phase
 
-        % Weight factors
-        A = (1 + 1j.*k.*r) ./ r5;            % reactive/near-field:  (1+jkr)/r⁵
-        B = k^2 ./ (r2 .* r);                % radiative/far-field:  k²/r³
+        % Weight factors  (e^{jωt} convention; reduces to static at k→0)
+        A = (1 + 1j.*k.*r) ./ r3;            % reactive/near-field:  (1+jkr)/r³
+        B = k^2 ./ r;                        % radiative/far-field:  k²/r
 
         % Transverse component of p relative to r̂:  p - (p·d/r²)·d
         pt_x = px - p_dot_d.*dx./r2;
